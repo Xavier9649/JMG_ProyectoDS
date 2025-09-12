@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Pedido {
-    private Integer id;
+    private Integer idPedido; // cambiado de 'id' a 'idPedido'
     private Cliente cliente;
     private final List<DetallePedido> detalles = new ArrayList<>();
     private EstadoPedido estado = EstadoPedido.REGISTRADO;
@@ -15,7 +15,7 @@ public class Pedido {
         setCliente(cliente);
     }
 
-    public Integer getId() { return id; }
+    public Integer getId() { return idPedido; }
     public Cliente getCliente() { return cliente; }
     public void setCliente(Cliente cliente) {
         if (cliente == null || cliente.getId() == null)
@@ -56,13 +56,13 @@ public class Pedido {
                 ps.setTimestamp(4, Timestamp.valueOf(fechaCreacion));
                 ps.executeUpdate();
                 try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) this.id = rs.getInt(1);
+                    if (rs.next()) this.idPedido = rs.getInt(1);
                 }
             }
 
             // Inserta detalles
             for (DetallePedido d : detalles) {
-                d.setIdPedido(this.id);
+                d.setIdPedido(this.idPedido);
                 d.guardarCon(conn);
             }
 
@@ -74,15 +74,14 @@ public class Pedido {
 
     public void actualizarEstado(EstadoPedido nuevo) {
         cambiarEstado(nuevo);
-        final String sql = "UPDATE pedido SET estado=? WHERE id=?";
+        final String sql = "UPDATE pedido SET estado=? WHERE id_pedido=?"; // corregido
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, estado.name());
-            ps.setInt(2, id);
+            ps.setInt(2, idPedido);
             ps.executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException("Error al actualizar estado", e);
         }
     }
 }
-

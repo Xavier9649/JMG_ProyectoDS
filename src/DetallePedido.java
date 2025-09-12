@@ -2,7 +2,6 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
-
 public class DetallePedido {
     private Integer id;
     private Integer idPedido;

@@ -2,20 +2,20 @@ import java.sql.*;
 import java.util.Optional;
 
 public class Cliente {
-    private Integer id;         // puede ser autoincrement
+    private Integer id;         // corresponde a id_cliente en la BD
     private String nombre;
-    private String email;
+    private String correo;      // 🔹 ahora se llama correo
     private String telefono;
 
-    public Cliente(Integer id, String nombre, String email, String telefono) {
+    public Cliente(Integer id, String nombre, String correo, String telefono) {
         setId(id);
         setNombre(nombre);
-        setEmail(email);
+        setCorreo(correo);
         setTelefono(telefono);
     }
 
-    public Cliente(String nombre, String email, String telefono) {
-        this(null, nombre, email, telefono);
+    public Cliente(String nombre, String correo, String telefono) {
+        this(null, nombre, correo, telefono);
     }
 
     // Encapsulamiento + validaciones simples
@@ -28,9 +28,9 @@ public class Cliente {
         this.nombre = nombre.trim();
     }
 
-    public String getEmail() { return email; }
-    public void setEmail(String email) {
-        this.email = (email == null) ? null : email.trim();
+    public String getCorreo() { return correo; }
+    public void setCorreo(String correo) {
+        this.correo = (correo == null) ? null : correo.trim();
     }
 
     public String getTelefono() { return telefono; }
@@ -45,15 +45,15 @@ public class Cliente {
 
     // ===== CRUD (mínimo) =====
     public void guardar() {
-        final String sql = "INSERT INTO cliente (nombre, email, telefono) VALUES (?, ?, ?)";
+        final String sql = "INSERT INTO cliente (nombre, correo, telefono) VALUES (?, ?, ?)";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, nombre);
-            ps.setString(2, email);
+            ps.setString(2, correo);
             ps.setString(3, telefono);
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) this.id = rs.getInt(1);
+                if (rs.next()) this.id = rs.getInt(1); // devuelve id_cliente autoincrement
             }
         } catch (SQLException e) {
             throw new RuntimeException("Error al guardar cliente", e);
@@ -62,11 +62,11 @@ public class Cliente {
 
     public void actualizar() {
         if (id == null) throw new IllegalStateException("Cliente sin id");
-        final String sql = "UPDATE cliente SET nombre=?, email=?, telefono=? WHERE id=?";
+        final String sql = "UPDATE cliente SET nombre=?, correo=?, telefono=? WHERE id_cliente=?";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, nombre);
-            ps.setString(2, email);
+            ps.setString(2, correo);
             ps.setString(3, telefono);
             ps.setInt(4, id);
             ps.executeUpdate();
@@ -77,7 +77,7 @@ public class Cliente {
 
     public void eliminar() {
         if (id == null) throw new IllegalStateException("Cliente sin id");
-        final String sql = "DELETE FROM cliente WHERE id=?";
+        final String sql = "DELETE FROM cliente WHERE id_cliente=?";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
@@ -88,16 +88,16 @@ public class Cliente {
     }
 
     public static Optional<Cliente> buscarPorId(int id) {
-        final String sql = "SELECT id, nombre, email, telefono FROM cliente WHERE id=?";
+        final String sql = "SELECT id_cliente, nombre, correo, telefono FROM cliente WHERE id_cliente=?";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return Optional.empty();
                 return Optional.of(new Cliente(
-                        rs.getInt("id"),
+                        rs.getInt("id_cliente"),
                         rs.getString("nombre"),
-                        rs.getString("email"),
+                        rs.getString("correo"),
                         rs.getString("telefono")
                 ));
             }
@@ -106,4 +106,3 @@ public class Cliente {
         }
     }
 }
-

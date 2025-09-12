@@ -146,9 +146,9 @@ public class CafeteriaUI extends JFrame {
     private void accionGuardarCliente(ActionEvent e) {
         try {
             String nombre = txtCliNombre.getText().trim();
-            String email = txtCliEmail.getText().trim();
+            String correo = txtCliEmail.getText().trim();
             String tel = txtCliTelefono.getText().trim();
-            Cliente c = new Cliente(nombre, email.isBlank()? null: email, tel.isBlank()? null: tel);
+            Cliente c = new Cliente(nombre, correo.isBlank()? null: correo, tel.isBlank()? null: tel);
             c.guardar();
             JOptionPane.showMessageDialog(this, "Cliente guardado con ID: " + c.getId());
             limpiarFormCliente();
@@ -168,7 +168,7 @@ public class CafeteriaUI extends JFrame {
             }
             Cliente c = oc.get();
             txtCliNombre.setText(c.getNombre());
-            txtCliEmail.setText(c.getEmail());
+            txtCliEmail.setText(c.getCorreo());
             txtCliTelefono.setText(c.getTelefono());
         } catch (Exception ex) {
             mostrarError("Buscar cliente", ex);
@@ -181,6 +181,7 @@ public class CafeteriaUI extends JFrame {
             Cliente c = new Cliente(id, txtCliNombre.getText().trim(),
                     txtCliEmail.getText().trim().isBlank()? null: txtCliEmail.getText().trim(),
                     txtCliTelefono.getText().trim().isBlank()? null: txtCliTelefono.getText().trim());
+
             c.actualizar();
             JOptionPane.showMessageDialog(this, "Cliente actualizado");
             limpiarFormCliente();
@@ -212,13 +213,13 @@ public class CafeteriaUI extends JFrame {
 
     private void refrescarTablaClientes() {
         modeloClientes.setRowCount(0);
-        final String sql = "SELECT id, nombre, email, telefono FROM cliente ORDER BY id DESC";
+        final String sql = "SELECT id_cliente, nombre, correo, telefono FROM cliente ORDER BY id_cliente DESC";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 modeloClientes.addRow(new Object[]{
-                        rs.getInt("id"), rs.getString("nombre"), rs.getString("email"), rs.getString("telefono")
+                        rs.getInt("id_cliente"), rs.getString("nombre"), rs.getString("correo"), rs.getString("telefono")
                 });
             }
         } catch (SQLException e) {
@@ -380,21 +381,25 @@ public class CafeteriaUI extends JFrame {
 
     private void refrescarTablaCocina() {
         modeloCocina.setRowCount(0);
-        final String sql = "SELECT p.id, c.nombre AS cliente, p.estado, p.total, p.fecha_creacion " +
-                "FROM pedido p JOIN cliente c ON c.id = p.id_cliente " +
-                "ORDER BY p.id DESC";
+        final String sql = "SELECT p.id_pedido, c.nombre AS cliente, p.estado, p.total, p.fecha_creacion " +
+                "FROM pedido p JOIN cliente c ON c.id_cliente = p.id_cliente " +
+                "ORDER BY p.id_pedido DESC";
+
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 modeloCocina.addRow(new Object[]{
-                        rs.getInt(1), rs.getString(2), rs.getString(3), rs.getBigDecimal(4), rs.getTimestamp(5)
+                        rs.getInt("id_pedido"), rs.getString("cliente"),
+                        rs.getString("estado"), rs.getBigDecimal("total"),
+                        rs.getTimestamp("fecha_creacion")
                 });
             }
         } catch (SQLException e) {
             mostrarError("Cargar pedidos", e);
         }
     }
+
 
     private void actualizarEstadoSeleccion(EstadoPedido nuevo) {
         int row = tablaCocina.getSelectedRow();
@@ -414,13 +419,14 @@ public class CafeteriaUI extends JFrame {
             }
 
             // Actualizar directamente por SQL (simple) o usa tu modelo Pedido si tienes buscarPorId
-            final String sql = "UPDATE pedido SET estado=? WHERE id=?";
+            final String sql = "UPDATE pedido SET estado=? WHERE id_pedido=?";
             try (Connection conn = ConexionDB.conectar();
                  PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, nuevo.name());
                 ps.setInt(2, idPedido);
                 ps.executeUpdate();
             }
+
 
             JOptionPane.showMessageDialog(this, "Estado actualizado a " + nuevo);
             refrescarTablaCocina();
