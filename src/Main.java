@@ -1,15 +1,32 @@
-//TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or
-// click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
+
+
+import java.awt.*;
+import java.math.BigDecimal;
+
 public class Main {
     public static void main(String[] args) {
-        //TIP Press <shortcut actionId="ShowIntentionActions"/> with your caret at the highlighted text
-        // to see how IntelliJ IDEA suggests fixing it.
-        System.out.printf("Hello and welcome!");
+        // 1) Crear/guardar cliente
+        Cliente cliente = new Cliente("Juan Pérez", "juan@example.com", "0999999999");
+        cliente.guardar();
 
-        for (int i = 1; i <= 5; i++) {
-            //TIP Press <shortcut actionId="Debug"/> to start debugging your code. We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint
-            // for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.
-            System.out.println("i = " + i);
-        }
+        // 2) Crear/guardar items de menú
+        MenuItem cafe   = new MenuItem("Café Americano", new BigDecimal("1.50"));
+        MenuItem sandwich = new MenuItem("Sándwich de pollo", new BigDecimal("3.75"));
+        cafe.guardar();
+        sandwich.guardar();
+
+        // 3) Crear pedido + detalles
+        Pedido pedido = new Pedido(cliente);
+        pedido.agregarDetalle(cafe, 2);       // 2 cafés
+        pedido.agregarDetalle(sandwich, 1);   // 1 sándwich
+        pedido.guardar();
+
+        // 4) Flujo de estados
+        pedido.actualizarEstado(EstadoPedido.EN_PREPARACION);
+        pedido.actualizarEstado(EstadoPedido.LISTO);
+
+        // 5) Notificar
+        NotificacionService noti = new NotificacionService();
+        noti.notificarPedidoListo(pedido);
     }
 }
