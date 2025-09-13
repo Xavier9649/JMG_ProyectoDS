@@ -2,71 +2,72 @@ import java.sql.*;
 import java.util.Optional;
 
 public class Cliente {
-    private Integer id;         // corresponde a id_cliente en la BD
+    private Integer id;
     private String nombre;
-    private String correo;      // 🔹 ahora se llama correo
+    private String email;    // mapeado a columna 'correo'
     private String telefono;
 
-    public Cliente(Integer id, String nombre, String correo, String telefono) {
+    public Cliente(Integer id, String nombre, String email, String telefono) {
         setId(id);
         setNombre(nombre);
-        setCorreo(correo);
+        setEmail(email);
         setTelefono(telefono);
     }
 
-    public Cliente(String nombre, String correo, String telefono) {
-        this(null, nombre, correo, telefono);
+    public Cliente(String nombre, String email, String telefono) {
+        this(null, nombre, email, telefono);
     }
 
-    // Encapsulamiento + validaciones simples
     public Integer getId() { return id; }
     public void setId(Integer id) { this.id = id; }
 
     public String getNombre() { return nombre; }
     public void setNombre(String nombre) {
-        if (nombre == null || nombre.isBlank()) throw new IllegalArgumentException("Nombre requerido");
+        if (nombre == null || nombre.isBlank())
+            throw new IllegalArgumentException("El nombre no puede estar vacío");
         this.nombre = nombre.trim();
     }
 
-    public String getCorreo() { return correo; }
-    public void setCorreo(String correo) {
-        this.correo = (correo == null) ? null : correo.trim();
+    public String getEmail() { return email; }
+    public void setEmail(String email) {
+        this.email = (email == null || email.isBlank()) ? null : email.trim();
     }
 
     public String getTelefono() { return telefono; }
     public void setTelefono(String telefono) {
-        this.telefono = (telefono == null) ? null : telefono.trim();
+        this.telefono = (telefono == null || telefono.isBlank()) ? null : telefono.trim();
     }
 
     @Override
     public String toString() {
-        return "Cliente{id=%s, nombre='%s'}".formatted(id, nombre);
+        return "Cliente{id=" + id + ", nombre='" + nombre + "', email='" + email + "', telefono='" + telefono + "'}";
     }
 
-    // ===== CRUD (mínimo) =====
+    // INSERT (usa columna 'correo')
     public void guardar() {
         final String sql = "INSERT INTO cliente (nombre, correo, telefono) VALUES (?, ?, ?)";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, nombre);
-            ps.setString(2, correo);
+            ps.setString(2, email);
             ps.setString(3, telefono);
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) this.id = rs.getInt(1); // devuelve id_cliente autoincrement
+                if (rs.next()) this.id = rs.getInt(1);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Error al guardar cliente", e);
         }
     }
 
+    // UPDATE (usa PK id_cliente y columna 'correo')
     public void actualizar() {
-        if (id == null) throw new IllegalStateException("Cliente sin id");
+        if (id == null) throw new IllegalStateException("Cliente sin ID, no se puede actualizar");
         final String sql = "UPDATE cliente SET nombre=?, correo=?, telefono=? WHERE id_cliente=?";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, nombre);
-            ps.setString(2, correo);
+            ps.setString(2, email);
             ps.setString(3, telefono);
             ps.setInt(4, id);
             ps.executeUpdate();
@@ -75,8 +76,9 @@ public class Cliente {
         }
     }
 
+    // DELETE (usa PK id_cliente)
     public void eliminar() {
-        if (id == null) throw new IllegalStateException("Cliente sin id");
+        if (id == null) throw new IllegalStateException("Cliente sin ID, no se puede eliminar");
         final String sql = "DELETE FROM cliente WHERE id_cliente=?";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -87,22 +89,25 @@ public class Cliente {
         }
     }
 
+    // SELECT por PK (alias para mantener getters iguales)
     public static Optional<Cliente> buscarPorId(int id) {
-        final String sql = "SELECT id_cliente, nombre, correo, telefono FROM cliente WHERE id_cliente=?";
+        final String sql = "SELECT id_cliente AS id, nombre, correo AS email, telefono FROM cliente WHERE id_cliente=?";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return Optional.empty();
-                return Optional.of(new Cliente(
-                        rs.getInt("id_cliente"),
+                Cliente c = new Cliente(
+                        rs.getInt("id"),
                         rs.getString("nombre"),
-                        rs.getString("correo"),
+                        rs.getString("email"),
                         rs.getString("telefono")
-                ));
+                );
+                return Optional.of(c);
             }
         } catch (SQLException e) {
             throw new RuntimeException("Error al buscar cliente", e);
         }
     }
 }
+

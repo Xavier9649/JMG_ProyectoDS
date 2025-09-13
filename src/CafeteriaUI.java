@@ -9,24 +9,9 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * UI Swing minimal para el proyecto de cafetería.
- *
- * Requisitos previos: tus clases existentes en el mismo src/ sin package:
- *  - ConexionBD (JDBC a MySQL)
- *  - Cliente (CRUD básico con guardar/actualizar/eliminar/buscarPorId)
- *  - MenuItem (guardar/buscarPorId)
- *  - Pedido (agregarDetalle, calcularTotal, guardar, actualizarEstado)
- *  - DetallePedido (usada por Pedido)
- *  - EstadoPedido (enum)
- *  - NotificacionService (impresión en consola)
- *
- * Esta UI agrega 3 pestañas:
- *  1) Clientes: Crear / Buscar / Actualizar / Eliminar
- *  2) Pedidos (Mesero): armar pedido con items existentes y guardarlo
- *  3) Cocina: ver pedidos y actualizar estados (EN_PREPARACION → LISTO)
- *
- *  Nota: Para simplificar y mantenerte en POO, toda la lógica de dominio
- *  usa las clases del modelo. Esta UI solo orquesta y renderiza tablas.
+ * UI Swing para el proyecto de cafetería (actualizado):
+ * - En "Pedidos (Mesero)" ahora puedes seleccionar productos del menú desde un JComboBox
+ *   (en lugar de escribir el ID). Se cargan desde la tabla menu_item (solo activos).
  */
 public class CafeteriaUI extends JFrame {
 
@@ -40,12 +25,18 @@ public class CafeteriaUI extends JFrame {
 
     // ===== PEDIDOS (MESERO) =====
     private JTextField txtPedidoClienteId;
-    private JTextField txtItemId;
+    private JTextField txtMeseroId;     // opcional
+    private JTextField txtNumeroMesa;   // opcional
     private JTextField txtCantidad;
     private JTable tablaCarrito;
     private DefaultTableModel modeloCarrito;
     private JLabel lblTotalPedido;
+
     private final List<DetallePedido> carritoDetalles = new ArrayList<>();
+
+    // Menú (nuevo)
+    private JComboBox<MenuItem> comboMenu;                 // muestra nombre + precio
+    private final List<MenuItem> opcionesMenu = new ArrayList<>(); // cache en memoria
 
     // ===== COCINA =====
     private JTable tablaCocina;
@@ -56,7 +47,7 @@ public class CafeteriaUI extends JFrame {
     public CafeteriaUI() {
         super("Cafetería - Gestión (Swing)");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(980, 680);
+        setSize(1040, 740);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
@@ -68,6 +59,7 @@ public class CafeteriaUI extends JFrame {
 
         // Cargar listados iniciales
         refrescarTablaClientes();
+        cargarMenuDesdeBD();
         refrescarTablaCocina();
     }
 
@@ -75,7 +67,6 @@ public class CafeteriaUI extends JFrame {
     private JPanel crearPanelClientes() {
         JPanel panel = new JPanel(new BorderLayout());
 
-        // Formulario superior
         JPanel form = new JPanel(new GridLayout(2, 1));
         JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JPanel fila2 = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -112,24 +103,20 @@ public class CafeteriaUI extends JFrame {
 
         form.add(fila1);
         form.add(fila2);
-
         panel.add(form, BorderLayout.NORTH);
 
-        // Tabla clientes
         modeloClientes = new DefaultTableModel(new Object[]{"ID", "Nombre", "Email", "Teléfono"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
         tablaClientes = new JTable(modeloClientes);
         panel.add(new JScrollPane(tablaClientes), BorderLayout.CENTER);
 
-        // Listeners
         btnGuardar.addActionListener(this::accionGuardarCliente);
         btnBuscar.addActionListener(this::accionBuscarCliente);
         btnActualizar.addActionListener(this::accionActualizarCliente);
         btnEliminar.addActionListener(this::accionEliminarCliente);
         btnRefrescar.addActionListener(e -> refrescarTablaClientes());
 
-        // Click en tabla para cargar al formulario
         tablaClientes.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && tablaClientes.getSelectedRow() >= 0) {
                 int row = tablaClientes.getSelectedRow();
@@ -146,9 +133,9 @@ public class CafeteriaUI extends JFrame {
     private void accionGuardarCliente(ActionEvent e) {
         try {
             String nombre = txtCliNombre.getText().trim();
-            String correo = txtCliEmail.getText().trim();
+            String email = txtCliEmail.getText().trim();
             String tel = txtCliTelefono.getText().trim();
-            Cliente c = new Cliente(nombre, correo.isBlank()? null: correo, tel.isBlank()? null: tel);
+            Cliente c = new Cliente(nombre, email.isBlank()? null: email, tel.isBlank()? null: tel);
             c.guardar();
             JOptionPane.showMessageDialog(this, "Cliente guardado con ID: " + c.getId());
             limpiarFormCliente();
@@ -168,7 +155,7 @@ public class CafeteriaUI extends JFrame {
             }
             Cliente c = oc.get();
             txtCliNombre.setText(c.getNombre());
-            txtCliEmail.setText(c.getCorreo());
+            txtCliEmail.setText(c.getEmail());
             txtCliTelefono.setText(c.getTelefono());
         } catch (Exception ex) {
             mostrarError("Buscar cliente", ex);
@@ -181,7 +168,6 @@ public class CafeteriaUI extends JFrame {
             Cliente c = new Cliente(id, txtCliNombre.getText().trim(),
                     txtCliEmail.getText().trim().isBlank()? null: txtCliEmail.getText().trim(),
                     txtCliTelefono.getText().trim().isBlank()? null: txtCliTelefono.getText().trim());
-
             c.actualizar();
             JOptionPane.showMessageDialog(this, "Cliente actualizado");
             limpiarFormCliente();
@@ -213,13 +199,13 @@ public class CafeteriaUI extends JFrame {
 
     private void refrescarTablaClientes() {
         modeloClientes.setRowCount(0);
-        final String sql = "SELECT id_cliente, nombre, correo, telefono FROM cliente ORDER BY id_cliente DESC";
+        final String sql = "SELECT id_cliente AS id, nombre, correo AS email, telefono FROM cliente ORDER BY id_cliente DESC";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 modeloClientes.addRow(new Object[]{
-                        rs.getInt("id_cliente"), rs.getString("nombre"), rs.getString("correo"), rs.getString("telefono")
+                        rs.getInt("id"), rs.getString("nombre"), rs.getString("email"), rs.getString("telefono")
                 });
             }
         } catch (SQLException e) {
@@ -231,54 +217,95 @@ public class CafeteriaUI extends JFrame {
     private JPanel crearPanelPedidos() {
         JPanel panel = new JPanel(new BorderLayout());
 
+        // --- Barra superior (datos y agregar al carrito) ---
         JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT));
         txtPedidoClienteId = new JTextField(6);
-        txtItemId = new JTextField(6);
+        txtMeseroId = new JTextField(6);
+        txtNumeroMesa = new JTextField(6);
+        comboMenu = new JComboBox<>();
         txtCantidad = new JTextField(4);
+
         JButton btnAddItem = new JButton("Agregar al carrito");
-        JButton btnGuardarPedido = new JButton("Guardar Pedido");
+        JButton btnRefrescarMenu = new JButton("Actualizar menú");
         lblTotalPedido = new JLabel("Total: $0.00");
 
         top.add(new JLabel("ID Cliente:"));
         top.add(txtPedidoClienteId);
+        top.add(Box.createHorizontalStrut(8));
+        top.add(new JLabel("ID Mesero:"));
+        top.add(txtMeseroId);
+        top.add(Box.createHorizontalStrut(8));
+        top.add(new JLabel("N° Mesa:"));
+        top.add(txtNumeroMesa);
+
         top.add(Box.createHorizontalStrut(12));
-        top.add(new JLabel("ID Item:"));
-        top.add(txtItemId);
+        top.add(new JLabel("Producto:"));
+        top.add(comboMenu);
         top.add(new JLabel("Cant:"));
         top.add(txtCantidad);
         top.add(btnAddItem);
-        top.add(Box.createHorizontalStrut(12));
-        top.add(btnGuardarPedido);
-        top.add(Box.createHorizontalStrut(12));
-        top.add(lblTotalPedido);
+        top.add(Box.createHorizontalStrut(8));
+        top.add(btnRefrescarMenu);
 
         panel.add(top, BorderLayout.NORTH);
 
-        modeloCarrito = new DefaultTableModel(new Object[]{"ID Item", "Nombre", "Precio", "Cantidad", "Subtotal"}, 0) {
+        // --- Tabla del carrito ---
+        modeloCarrito = new DefaultTableModel(
+                new Object[]{"ID Item", "Nombre", "Precio", "Cantidad", "Subtotal"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
         tablaCarrito = new JTable(modeloCarrito);
         panel.add(new JScrollPane(tablaCarrito), BorderLayout.CENTER);
 
-        // acciones
-        btnAddItem.addActionListener(this::accionAgregarItemCarrito);
+        // --- Barra inferior fija con Guardar Pedido y Total (SIEMPRE visible) ---
+        JPanel bottom = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton btnGuardarPedido = new JButton("Guardar Pedido");
+        bottom.add(lblTotalPedido);
+        bottom.add(btnGuardarPedido);
+        panel.add(bottom, BorderLayout.SOUTH);
+
+        // Listeners
+        btnAddItem.addActionListener(this::accionAgregarItemCarritoDesdeCombo);
+        btnRefrescarMenu.addActionListener(e -> cargarMenuDesdeBD());
         btnGuardarPedido.addActionListener(this::accionGuardarPedido);
 
         return panel;
     }
 
-    private void accionAgregarItemCarrito(ActionEvent e) {
+
+    // Carga el menú desde BD a la lista + combo
+    private void cargarMenuDesdeBD() {
+        opcionesMenu.clear();
+        comboMenu.removeAllItems();
+        final String sql = "SELECT id_item AS id, nombre, precio FROM menu_item ORDER BY nombre";
+        try (Connection conn = ConexionDB.conectar();
+             PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                MenuItem mi = new MenuItem(
+                        rs.getInt("id"),
+                        rs.getString("nombre"),
+                        rs.getBigDecimal("precio"),
+                        null
+                );
+                opcionesMenu.add(mi);
+                comboMenu.addItem(mi);
+            }
+        } catch (SQLException e) { mostrarError("Cargar menú", e); }
+    }
+
+
+
+    private void accionAgregarItemCarritoDesdeCombo(ActionEvent e) {
         try {
-            int idItem = Integer.parseInt(txtItemId.getText().trim());
+            Object sel = comboMenu.getSelectedItem();
+            if (!(sel instanceof MenuItem mi)) {
+                JOptionPane.showMessageDialog(this, "Selecciona un producto del menú");
+                return;
+            }
             int cant = Integer.parseInt(txtCantidad.getText().trim());
             if (cant <= 0) throw new IllegalArgumentException("Cantidad debe ser > 0");
 
-            Optional<MenuItem> oi = MenuItem.buscarPorId(idItem);
-            if (oi.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "No existe MenuItem con id " + idItem);
-                return;
-            }
-            MenuItem mi = oi.get();
             DetallePedido det = new DetallePedido(mi, cant);
             carritoDetalles.add(det);
 
@@ -286,7 +313,6 @@ public class CafeteriaUI extends JFrame {
             modeloCarrito.addRow(new Object[]{mi.getId(), mi.getNombre(), mi.getPrecio(), cant, subtotal});
 
             actualizarTotalCarrito();
-            txtItemId.setText("");
             txtCantidad.setText("");
         } catch (Exception ex) {
             mostrarError("Agregar item", ex);
@@ -300,44 +326,49 @@ public class CafeteriaUI extends JFrame {
         lblTotalPedido.setText("Total: $" + total);
     }
 
+    private Integer parseNullableInt(String s) {
+        if (s == null) return null;
+        s = s.trim();
+        if (s.isEmpty()) return null;
+        return Integer.parseInt(s);
+    }
+
     private void accionGuardarPedido(ActionEvent e) {
         try {
             int idCliente = Integer.parseInt(txtPedidoClienteId.getText().trim());
-            Optional<Cliente> oc = Cliente.buscarPorId(idCliente);
-            if (oc.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Cliente no existe");
-                return;
-            }
+            Integer idMesero = Integer.parseInt(txtMeseroId.getText().trim());
+            String numeroMesa = txtNumeroMesa.getText().trim();
             if (carritoDetalles.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "Carrito vacío");
                 return;
             }
-
-            Cliente cliente = oc.get();
-            Pedido p = new Pedido(cliente);
-            for (DetallePedido d : carritoDetalles) {
-                p.agregarDetalle(d.getItem(), d.getCantidad());
+            var oc = Cliente.buscarPorId(idCliente);
+            if (oc.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Cliente no existe");
+                return;
             }
+            Pedido p = new Pedido(oc.get(), idMesero, numeroMesa.isEmpty()? null : numeroMesa);
+            for (DetallePedido d : carritoDetalles) p.agregarDetalle(d.getItem(), d.getCantidad());
             p.guardar();
 
-            // limpiar carrito
             carritoDetalles.clear();
             modeloCarrito.setRowCount(0);
             actualizarTotalCarrito();
-            txtPedidoClienteId.setText("");
-
             JOptionPane.showMessageDialog(this, "Pedido guardado. ID: " + p.getId());
-            refrescarTablaCocina();
+            refrescarTablaCocina(); // para verlo en la pestaña Cocina
         } catch (Exception ex) {
             mostrarError("Guardar pedido", ex);
         }
     }
 
+
+
     // ===================== PANEL COCINA =====================
     private JPanel crearPanelCocina() {
         JPanel panel = new JPanel(new BorderLayout());
 
-        modeloCocina = new DefaultTableModel(new Object[]{"ID Pedido", "Cliente", "Estado", "Total", "Fecha"}, 0) {
+        modeloCocina = new DefaultTableModel(
+                new Object[]{"ID Pedido", "Cliente", "ID Mesero", "N° Mesa", "Estado", "Total", "Fecha"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
         tablaCocina = new JTable(modeloCocina);
@@ -356,23 +387,11 @@ public class CafeteriaUI extends JFrame {
         btnEnPrep.addActionListener(e -> actualizarEstadoSeleccion(EstadoPedido.EN_PREPARACION));
         btnListo.addActionListener(e -> {
             actualizarEstadoSeleccion(EstadoPedido.LISTO);
-            // notificar si quedó listo
             int row = tablaCocina.getSelectedRow();
             if (row >= 0) {
-                int idPedido = (int) modeloCocina.getValueAt(row, 0);
-                // crear un Pedido minimal para notificar
-                try {
-                    Cliente cliente = new Cliente(0, "-", null, null); // dummy (no se usa)
-                    Pedido p = new Pedido(cliente);
-                    // hack: asignar id por reflexión no es buena práctica; mejor consultar al modelo real.
-                    // Para simplicidad en esta demo, solo notificamos con el id.
-                    // Extiende tu clase Pedido para un buscarPorId si quieres un objeto completo.
-                    //
-                    // Notificamos por consola
-                    System.out.println("[NOTIFICACIÓN] Pedido #" + idPedido + " está LISTO para el mesero.");
-                } catch (Exception ex) {
-                    ex.printStackTrace();
-                }
+                Object val = modeloCocina.getValueAt(row, 0);
+                int idPedido = (val instanceof Number) ? ((Number) val).intValue() : Integer.parseInt(val.toString());
+                System.out.println("[NOTIFICACIÓN] Pedido #" + idPedido + " está LISTO para el mesero.");
             }
         });
 
@@ -381,70 +400,65 @@ public class CafeteriaUI extends JFrame {
 
     private void refrescarTablaCocina() {
         modeloCocina.setRowCount(0);
-        final String sql = "SELECT p.id_pedido, c.nombre AS cliente, p.estado, p.total, p.fecha_creacion " +
-                "FROM pedido p JOIN cliente c ON c.id_cliente = p.id_cliente " +
-                "ORDER BY p.id_pedido DESC";
-
+        final String sql =
+                "SELECT p.id_pedido AS id, c.nombre AS cliente, p.id_mesero, p.numero_mesa, p.estado, p.total, p.fecha_creacion " +
+                        "FROM pedido p JOIN cliente c ON c.id_cliente = p.id_cliente " +
+                        "ORDER BY p.id_pedido DESC";
         try (Connection conn = ConexionDB.conectar();
              PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 modeloCocina.addRow(new Object[]{
-                        rs.getInt("id_pedido"), rs.getString("cliente"),
-                        rs.getString("estado"), rs.getBigDecimal("total"),
-                        rs.getTimestamp("fecha_creacion")
+                        rs.getInt("id"), rs.getString("cliente"),
+                        rs.getInt("id_mesero"), rs.getString("numero_mesa"),
+                        rs.getString("estado"), rs.getBigDecimal("total"), rs.getTimestamp("fecha_creacion")
                 });
             }
-        } catch (SQLException e) {
-            mostrarError("Cargar pedidos", e);
-        }
+        } catch (SQLException e) { mostrarError("Cargar pedidos", e); }
     }
 
 
     private void actualizarEstadoSeleccion(EstadoPedido nuevo) {
         int row = tablaCocina.getSelectedRow();
-        if (row < 0) {
-            JOptionPane.showMessageDialog(this, "Selecciona un pedido");
-            return;
-        }
-        int idPedido = (int) modeloCocina.getValueAt(row, 0);
-        String estadoActual = String.valueOf(modeloCocina.getValueAt(row, 2));
+        if (row < 0) { JOptionPane.showMessageDialog(this, "Selecciona un pedido"); return; }
+        int idPedido = Integer.parseInt(String.valueOf(modeloCocina.getValueAt(row, 0)));
+        String estadoActualDb = String.valueOf(modeloCocina.getValueAt(row, 4));
+        EstadoPedido actual = EstadoPedido.fromDb(estadoActualDb);
 
         try {
-            // Validar transición con el enum
-            EstadoPedido actualEnum = EstadoPedido.valueOf(estadoActual);
-            if (!actualEnum.puedeTransitarA(nuevo)) {
-                JOptionPane.showMessageDialog(this, "Transición inválida: " + actualEnum + " → " + nuevo);
-                return;
+            if (!actual.puedeTransitarA(nuevo)) {
+                JOptionPane.showMessageDialog(this, "Transición inválida: " + actual + " → " + nuevo); return;
             }
-
-            // Actualizar directamente por SQL (simple) o usa tu modelo Pedido si tienes buscarPorId
             final String sql = "UPDATE pedido SET estado=? WHERE id_pedido=?";
-            try (Connection conn = ConexionDB.conectar();
-                 PreparedStatement ps = conn.prepareStatement(sql)) {
-                ps.setString(1, nuevo.name());
+            try (Connection conn = ConexionDB.conectar(); PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, nuevo.toDb());
                 ps.setInt(2, idPedido);
                 ps.executeUpdate();
             }
-
-
             JOptionPane.showMessageDialog(this, "Estado actualizado a " + nuevo);
             refrescarTablaCocina();
-        } catch (Exception ex) {
-            mostrarError("Actualizar estado", ex);
-        }
+        } catch (Exception ex) { mostrarError("Actualizar estado", ex); }
     }
+
 
     // ===================== UTILS =====================
     private void mostrarError(String titulo, Exception ex) {
         ex.printStackTrace();
-        JOptionPane.showMessageDialog(this, titulo + ":\n" + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(
+                this,                           // parentComponent
+                titulo + ":\n" + ex.getMessage(),// message
+                "Error",                        // title
+                JOptionPane.ERROR_MESSAGE       // messageType
+        );
     }
 
+
     public static void main(String[] args) {
-        // Si tu driver requiere registro explícito, descomenta:
+        // Si tu driver requiere registro explícito:
         // try { Class.forName("com.mysql.cj.jdbc.Driver"); } catch (ClassNotFoundException e) { e.printStackTrace(); }
         SwingUtilities.invokeLater(() -> new CafeteriaUI().setVisible(true));
     }
 }
+
+
 

@@ -8,7 +8,14 @@ public class ConexionDB {
     private static final String USER = "ursf1s0kkwntmweq";
     private static final String PASS = "3VcIZEQMJvUo9RpTTEaM";
 
-    private ConexionDB() {}
+    static {
+        try {
+            // Si el .jar está en el classpath, esto no siempre es necesario, pero asegura la carga.
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("Falta el conector MySQL en el classpath", e);
+        }
+    }
 
     public static Connection conectar() throws SQLException {
         return DriverManager.getConnection(URL, USER, PASS);
